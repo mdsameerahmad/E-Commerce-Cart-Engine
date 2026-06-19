@@ -65,6 +65,16 @@ const validateItemId = (itemId) => {
   }
 };
 
+const validateProductConsistency = (existingItem, productName, price) => {
+  if (
+    !existingItem ||
+    existingItem.productName !== productName ||
+    existingItem.price !== price
+  ) {
+    throw createError("Product ID already exists with different product details", 409);
+  }
+};
+
 export const getCompleteCart = async (userId) => {
   const cart = await findActiveCart(userId);
   const items = await CartItem.find({ cartId: cart._id }).sort({ createdAt: 1 }).lean();
@@ -81,30 +91,49 @@ export const addItemToCart = async ({ userId, productId, productName, price, qua
   validateProduct({ productId, productName, price, quantity });
 
   const cart = await findActiveCart(userId);
+  const normalizedProductId = productId.trim();
+  const normalizedProductName = productName.trim();
+  const existingItem = await CartItem.findOne({
+    cartId: cart._id,
+    productId: normalizedProductId,
+  });
 
-  await CartItem.findOneAndUpdate(
-    {
-      cartId: cart._id,
-      productId: productId.trim(),
-    },
-    {
-      $inc: { quantity },
-      $set: {
-        productName: productName.trim(),
-        price,
-      },
-      $setOnInsert: {
+  if (existingItem) {
+    validateProductConsistency(existingItem, normalizedProductName, price);
+
+    await CartItem.updateOne(
+      { _id: existingItem._id },
+      { $inc: { quantity } },
+      { runValidators: true },
+    );
+  } else {
+    try {
+      await CartItem.create({
         cartId: cart._id,
-        productId: productId.trim(),
-      },
-    },
-    {
-      returnDocument: "after",
-      upsert: true,
-      runValidators: true,
-      setDefaultsOnInsert: true,
-    },
-  );
+        productId: normalizedProductId,
+        productName: normalizedProductName,
+        price,
+        quantity,
+      });
+    } catch (error) {
+      if (error.code !== 11000) {
+        throw error;
+      }
+
+      const concurrentItem = await CartItem.findOne({
+        cartId: cart._id,
+        productId: normalizedProductId,
+      });
+
+      validateProductConsistency(concurrentItem, normalizedProductName, price);
+
+      await CartItem.updateOne(
+        { _id: concurrentItem._id },
+        { $inc: { quantity } },
+        { runValidators: true },
+      );
+    }
+  }
 
   await refreshCartExpiration(cart._id);
 
