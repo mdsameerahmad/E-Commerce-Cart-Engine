@@ -600,10 +600,25 @@ Protection exists at two levels:
 
 ### Duplicate products
 
-Protection exists at two levels:
+When a product ID already exists in a cart, the service first compares the stored
+`productName` and `price` with the incoming values:
 
-1. The service performs a cart-and-product upsert.
-2. A unique `{ cartId, productId }` index prevents duplicate rows.
+1. If both values match, the existing quantity is incremented.
+2. If either value differs, the request is rejected with `409 Conflict`.
+3. A unique `{ cartId, productId }` index prevents duplicate rows during concurrent
+   requests.
+
+The conflict response is:
+
+```json
+{
+  "success": false,
+  "message": "Product ID already exists with different product details"
+}
+```
+
+This guarantees that one `productId` cannot represent different products or prices
+inside the same cart while preserving normal quantity merging.
 
 ### User and cart creation
 
@@ -635,6 +650,7 @@ while preventing the expected partial state.
 | Zero or negative quantity | Rejected |
 | Negative or zero API price | Rejected |
 | Duplicate product ingestion | Quantity incremented |
+| Same `productId` with different `productName` or `price` | `409 Conflict` |
 | Multiple active cart attempt | Rejected by service/index |
 | More than 100 API requests | `429 Too Many Requests` |
 | Unknown route | Structured `404` |

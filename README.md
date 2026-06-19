@@ -470,7 +470,19 @@ Successful response — `201 Created`:
 }
 ```
 
-Adding `P1001` again to the same cart increments its quantity.
+Adding `P1001` again increments its quantity only when the incoming `productName`
+and `price` exactly match the existing cart item. A `productId` cannot represent
+different product metadata within the same cart.
+
+If the same `productId` is submitted with a different name or price, the API returns
+`409 Conflict`:
+
+```json
+{
+  "success": false,
+  "message": "Product ID already exists with different product details"
+}
+```
 
 ### 6. Update item quantity
 
@@ -818,6 +830,9 @@ and services use it to enforce cart ownership boundaries.
 - A cart item belongs to exactly one cart.
 - The same product cannot have duplicate rows in one cart.
 - Adding the same product increases quantity.
+- A `productId` must always represent the same product metadata within a cart.
+- If the same `productId` is submitted with a different `productName` or `price`,
+  the request is rejected with `409 Conflict`.
 - Quantity must remain greater than zero.
 - API item prices must be greater than zero.
 - Users cannot modify another user's cart items.
